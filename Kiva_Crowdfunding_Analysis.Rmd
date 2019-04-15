@@ -1,0 +1,567 @@
+---
+title: "FINAL_DRAFT"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+
+#### Importing Required Packages 
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+package_install_load <- function(x) 
+{
+  if (!require(x, character.only = TRUE)) 
+  {
+    install.packages(x, dep = TRUE)
+    if (!require(x, character.only = TRUE)) 
+    {
+      stop('Package not found')
+    }
+  }
+}
+
+## Block - Load Required Packages
+packages <- c("rlang","tidyverse","ggplot2","gridExtra","dplyr","sqldf","readxl","readr","tidytext","tidyr"
+              ,"maps","lubridate","treemap","stringi","stringr","plyr","leaflet")
+invisible(lapply(packages, package_install_load))
+```
+
+
+#### Function - Set Working Directory
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+set_workspace <- function(dir_path) 
+{
+  
+  #dir.create(dir_path) # Create Directory
+  setwd(dir_path) #Set Working Directory
+  print(paste("Working Directory Set to : ",dir_path)) # Print Message
+}
+
+## Setting Workspace
+#set_workspace("C:/Users/K/Downloads/DS5110 Project");
+set_workspace("C:/Users/aggarwal.k/Downloads/DS5110 Project");
+
+```
+
+
+
+### (I) Data Acquisition:
+### (a) Acquisition of Data:
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+loan <- read_csv("kiva_loans.csv")
+
+
+reg_loc <- read_csv("kiva_mpi_region_locations.csv")
+
+
+theme <- read_csv("loan_theme_ids.csv")
+
+
+theme_reg <- read_csv("loan_themes_by_region.csv")
+
+flood_dataset <- read_excel("Flood_Risk.xlsx")
+
+
+data(world.cities)
+world_cities <- world.cities
+
+remove(world.cities)
+```
+
+### (b) Glimpse of Data:
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+head(loan)
+glimpse(loan)
+
+
+head(reg_loc)
+glimpse(reg_loc)
+
+
+head(theme)
+glimpse(theme)
+
+
+head(theme_reg)
+glimpse(theme_reg)
+
+```
+
+
+
+
+### Summary Statistics Data
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#summary(loan)
+#summary(reg_loc)
+#summary(theme)
+#summary(theme_reg)
+
+
+
+#Lets identify the total funded amount by Kiva to the field agents
+total_funded_amnt <- sum(loan$funded_amount)
+total_funded_amnt
+
+```
+
+
+
+### Data Preparation 
+
+
+### Data Cleaning & Shaping
+
+#### (I) Loan Time Formats
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+#separate funded time into years only, group by years and indentify the analysis
+loan <- loan %>% mutate(funding_year = year(funded_time)) 
+
+
+
+```
+
+
+
+#### (II) Removal and Alteration of Columns
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Unique observation where kiva has active loans
+reg_loc <- unique(reg_loc[, !(colnames(reg_loc) %in% c("geo"))])
+loan <- unique(loan[, !(colnames(loan) %in% c("date"))])
+theme <- unique(theme[, !(colnames(theme) %in% c("id"))])
+#theme_reg_raw <- unique(theme_reg[, !(colnames(theme_reg) %in% c("Partner ID"))])
+
+```
+
+
+#### (iii) Modifying "borrower_genders" variable to replace every instance with single gender i.e male or female
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+loan <- loan %>% mutate(gender = ifelse(str_detect(borrower_genders, "female"), "female", "male"))
+
+```
+
+
+
+### Data Exploration:
+
+### Exploratory Data Plots: General
+
+
+#### (i) Loan
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#levels of sector
+table(loan$sector)
+
+#levels of repayment interval
+table(loan$repayment_interval)
+
+#levels of gender
+table(loan$gender)
+
+#summary statsistics of funded amount by kiva 
+summary(loan$funded_amount)
+
+```
+
+
+
+#### (ii) MPI_REGION_LOC
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Measurement poverty index
+summary(reg_loc$MPI)
+
+#identifying which columns with observations across the table is not having missing values
+colSums(!is.na(reg_loc))
+
+#identify whuch columns with observations across the table has missing values 
+colSums(is.na(reg_loc))
+
+#Lets remove the records where MPI is missing, since there will be no meaning of the other variables
+reg_loc <- reg_loc %>%
+  filter(!is.na(MPI))
+
+theme_reg$country <- ifelse(theme_reg$country == 'Viet Nam','Vietnam',theme_reg$country)
+reg_loc$country <- ifelse(reg_loc$country == 'Viet Nam','Vietnam',reg_loc$country)
+
+theme_reg$country <- ifelse(theme_reg$country == 'Myanmar (Burma)','Myanmar',theme_reg$country)
+reg_loc$country <- ifelse(reg_loc$country == 'Myanmar (Burma)','Myanmar',reg_loc$country)
+
+#level of world regions
+table(reg_loc$world_region)
+```
+
+
+
+### Join of loan and reg_loc 
+####Benefit, we can map active loans data with world region and measurement poverty index. Alsom will be able to map latitude and longitude of the location.  
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+# colnames(world_cities) <- gsub("\\.", "_", colnames(world_cities))
+# reg_loc <- sqldf("select  country_etc as country
+#                   ,wc.pop as pop
+#                   ,wc.lat,wc.long,world_region,MPI,region from world_cities wc
+#                  left join reg_loc rl on wc.country_etc = rl.country")
+
+
+
+#natural join by country and region
+loan_reg_loc <- loan %>%
+  left_join(reg_loc,by = c("country"="country"))
+
+
+#further perform analysis based on loan_mpi. Show EDA based on this
+
+
+```
+
+
+
+
+#### (iii) THEME_REG
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#identify which columns with observations across the table has missing values 
+colSums(is.na(theme_reg))
+
+
+#level of sector of field agents
+table(theme_reg$sector)
+
+
+#table(theme_reg$`Loan Theme Type`)
+
+```
+
+
+
+#### (iv) THEME
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#identify which columns with observations across the table has missing values 
+colSums(is.na(theme))
+
+```
+
+
+### Join of theme and theme_reg
+####Benefit, we can map active loans data with world region and measurement poverty index. Alsom will be able to map latitude and longitude of the location.
+
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#natural join by country and region
+theme_reg_join <- theme_reg %>%
+  left_join(theme,by = c("Partner ID" = "Partner ID"))
+
+#further perform analysis based on loan_mpi. Show EDA based on this
+```
+
+
+
+### ggplots - General
+
+#### (i) Popularity of sector where large number of customers got funded
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+loan %>%
+  group_by(sector) %>%
+  dplyr::summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  mutate(sector = reorder(sector,Count)) %>%
+  ggplot(aes(x = sector,y = Count)) +
+  geom_bar(stat = "identity", fill = "Gold") +
+  geom_text(aes(x = sector, y = 2, label = paste0("(",Count,")",sep=""))
+            , hjust = -.1, vjust = .3, fontface = "bold") +
+  xlab("Sector") +
+  ylab("Frequency") +
+  ggtitle("Popularity of Sectors in Funding") +
+  coord_flip()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+
+#### (ii) Popularity of sector where large number of funds been given
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+#Box-Plot, since using categorical against continuous
+
+loan %>%
+      mutate(fill = as.factor(sector))%>%
+      ggplot(aes(x = sector, y= log2(funded_amount), fill = sector)) +
+      geom_boxplot() +
+      labs(x= 'Sector',y = 'Funded Amount', 
+           title = paste0("Distribution of", ' Funded Amount ')) +
+       theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+
+#### (iii) Identifying the most number of repayment interval
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+loan %>%
+  group_by(repayment_interval) %>%
+  dplyr::summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  mutate(repayment_interval = reorder(repayment_interval,count)) %>%
+  ggplot(aes(x = repayment_interval,y = count)) +
+  geom_bar(position = position_dodge(), stat = "identity", fill = "green") +
+  geom_text(aes(x = repayment_interval, y = 2, label = paste0("(",count,")",sep="")), hjust = -.1, vjust =   .3, fontface = "bold") +
+  xlab("Repayment Interval") +
+  ylab("Frequency") +
+  ggtitle("Repayment Interval Frequency") +
+  coord_flip()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+#### (iv) Identifying the gender to whom the loans been given
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+loan %>%
+  filter(!is.na(gender)) %>%
+  group_by(gender) %>%
+  dplyr::summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  mutate(gender = reorder(gender,count)) %>%
+  ggplot(aes(x = gender,y = count/1000)) +
+  geom_bar(position = position_dodge(), stat = "identity", fill = "skyblue") +
+  geom_text(aes(x = gender, y = 2, label = paste0("(",count/1000,")",sep="")), hjust = -.1, vjust = .3, fontface = "bold") +
+  xlab("Gender") +
+  ylab("No. of Loans (x1000)") +
+  ggtitle("Loan Distribution by Gender") +
+  coord_flip()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+#### (v) Popularity of the activity where kiva has active loans
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+loan %>%
+  group_by(activity) %>%
+  dplyr::summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  ungroup() %>%
+  mutate(activity = reorder(activity,Count)) %>%
+  top_n(10) %>%
+  
+  ggplot(aes(x = activity,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = "light coral") +
+  geom_text(aes(x = activity, y = 1, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Activity', 
+       y = 'Frequency', 
+       title = 'Activities for Which Loan was Procured') +
+  coord_flip() +
+   theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+#### (vi) Popularity by Country where KIVA has active loans
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+loan %>%
+  group_by(country) %>%
+  dplyr::summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  ungroup() %>%
+  mutate(country = reorder(country,Count)) %>%
+  head(10) %>%
+  
+  ggplot(aes(x = country,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = "light green") +
+  geom_text(aes(x = country, y = 1, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Country', 
+       y = 'Frequency', 
+       title = 'Active Loans by Country') +
+  coord_flip() +
+   theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+#### The following plot shows the most popular themes in a bar chart. We have removed rows where the theme was not mentioned.
+
+#### General is the most popular theme which does not give us a lot of information.
+
+#### Underserved is the next popular theme, followed by Agriculture, Rural Inclusion, Water and Higher Education
+
+
+#### (vii) Popularity of Loan Themes
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+theme %>%
+  dplyr::rename (themeType = `Loan Theme Type`) %>%
+  filter(!is.na(themeType)) %>%
+  group_by(themeType) %>%
+  dplyr::summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  ungroup() %>%
+  mutate(themeType = reorder(themeType,Count)) %>%
+  head(10) %>%
+  
+  ggplot(aes(x = themeType,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = "purple") +
+  geom_text(aes(x = themeType, y = 1, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Type of Theme', 
+       y = 'Frequency', 
+       title = 'Themes for Which Loan was Procured') +
+  coord_flip() +
+   theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+colnames(world_cities) <- gsub("\\.", "_", colnames(world_cities))
+
+world_cities_ctry <- sqldf("select country_etc as country,median(lat) as lat, median(long) as lon
+                           from world_cities
+                           group by country_etc")
+
+
+country_loans <- sqldf("select wc.country,sum(funded_amount) amount,wc.lat,wc.lon,avg(MPI) MPI
+                      from loan cl
+                      inner join world_cities_ctry wc on wc.country = cl.country
+                      left join reg_loc rl on rl.country = wc.country
+                       group by wc.country,wc.lat,wc.lon")
+```
+
+## The below function generates a map of the region assigned and plots the loans disbursed 
+
+```{r}
+plotmap_by_country <- function(country_loans)
+{
+  
+  center_lon = median(country_loans$lon,na.rm = TRUE)
+  center_lat = median(country_loans$lat,na.rm = TRUE)
+  
+  
+  leaflet(country_loans) %>% addTiles() %>%
+    addCircles(lng = ~lon, lat = ~lat,radius = ~(amount/1000) ,
+               color ="Blue")  %>%
+    # controls
+    setView(lng=center_lon, lat=center_lat,zoom = 2) 
+}
+```
+
+
+## The function below creates plots for indicating countries top 10 countries in a region where maximum loan has been disbursed
+
+```{r}
+  country_loans %>%
+    group_by(country) %>%
+    dplyr::summarise(tot_amt = sum(amount)) %>%
+    arrange(desc(tot_amt)) %>%
+    ungroup() %>%
+    mutate(country = reorder(country,tot_amt)) %>%
+    head(10) %>%
+    
+    ggplot(aes(x = country,y = tot_amt/1000)) +
+    geom_bar(stat='identity',colour="white", fill = "Light coral") +
+    geom_text(aes(x = country, y = 1, label = paste0("(",tot_amt/1000,")",sep="")),
+              hjust=0, vjust=.5, size = 4, colour = 'black',
+              fontface = 'bold') +
+    labs(x = 'Countries', 
+         y = 'Loan Amount (x1000)', 
+         title = 'Loan Amount by Countries') +
+    coord_flip() +
+    theme_bw()+
+    theme(plot.title = element_text(hjust = 0.5))
+```
+
+## The Map below shows the areas of Africa were KIVA loans have been disbursed
+```{r}
+plotmap_by_country(country_loans)
+```
+
+## Tree Map of the funded loan amount by Country 
+```{r, message=FALSE, warning=FALSE, paged.print=FALSE}
+loans_funded_amount = country_loans %>%
+  group_by(country) %>%
+  dplyr::summarise(tot_amt = sum(amount)) %>%
+  arrange(desc(tot_amt)) %>%
+  ungroup() %>%
+  mutate(country = reorder(country,tot_amt)) %>%
+  head(20) 
+
+
+treemap(loans_funded_amount, 
+        index="country", 
+        vSize = "tot_amt",  
+        title="Funded Amount", 
+        palette = "RdBu",
+        fontsize.title = 14 
+)
+```
+
+## Flood Calamities Analysis
+
+```{r}
+flood_dataset <- read_excel("Flood_Risk.xlsx")
+
+
+flood_risks <- flood_dataset %>%
+  left_join(country_loans, by=c("Country"="country")) %>%
+  mutate(tot_amt = sum(country_loans$amount)) %>%
+  mutate(Percentage_Prop = (amount/tot_amt)*100) %>%
+  select("Country","Affected_Pop","amount","MPI","Percentage_Prop")
+
+
+top_10_flood_risks_funding <- flood_risks %>%
+  arrange(desc(Affected_Pop)) %>%
+  head(10) 
+
+```
+
+
+```{r}
+top_10_flood_risks_funding$Percentage_Prop <- ifelse(top_10_flood_risks_funding$Percentage_Prop > 0 ,top_10_flood_risks_funding$Percentage_Prop,0)
+top_10_flood_risks_funding$Percentage_Prop[is.na(top_10_flood_risks_funding$Percentage_Prop)] <- 0
+
+
+
+scaleFactor <- max(top_10_flood_risks_funding$Affected_Pop/1000) / max(top_10_flood_risks_funding$Percentage_Prop)
+
+
+ggplot(top_10_flood_risks_funding, aes(x=Country,  width=.4)) +
+  geom_col(aes(y=Affected_Pop/1000), fill="blue", position = position_nudge(x = -.4)) +
+  geom_col(aes(y=Percentage_Prop * scaleFactor), fill="red") +
+  scale_y_continuous(name="Affected Population (x1000)", sec.axis=sec_axis(~./scaleFactor, name="%age of Kiva Loans")) +
+  theme(
+    axis.title.y.left=element_text(color="blue"),
+    axis.text.y.left=element_text(color="blue"),
+    axis.title.y.right=element_text(color="red"),
+    axis.text.y.right=element_text(color="red")
+  ) +
+  labs(title = "Kiva Loans vs Flood Affected Population", x = element_blank())+
+  theme(plot.title = element_text(hjust = 0.5))+ 
+  theme(axis.title.y = element_text(vjust = 0.6)) +
+  theme(axis.text.x =
+                   element_text(size  = 10,
+                                angle = 45,
+                                hjust = 1,
+                                vjust = 1)) 
+  
+```
+```{r}
+flood_risks %>%
+  ggplot(aes(x=log(Affected_Pop/100000))) +
+  geom_point(aes(y=(amount/10000)))
+
+
+flood_risks %>%
+  ggplot(aes(x=log(MPI^2))) +
+  geom_point(aes(y=amount/10000))
+```
